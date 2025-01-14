@@ -3,6 +3,8 @@ import requests
 
 
 TRAINING_SAMPLES = 1
+FOLDER = "openai-vfinetune"
+SUBFOLDER = "data"
 
 
 def get_repo_config():
@@ -63,13 +65,8 @@ def create_imgs_blobs(api_url, token, file_names, base64_imgs):
             print(f"Error creating blob for {file_name}:", blob_response.text)
             exit()
 
-        else:
-            print("Blob ok")
-
         blob_sha = blob_response.json()["sha"]
         blobs.append({"path": file_name, "mode": "100644", "type": "blob", "sha": blob_sha})
-
-        print(f"Blob response for {file_name}: {blob_response.text}")
 
     return blobs
 
@@ -84,12 +81,8 @@ def create_new_tree(api_url, token, base_tree_sha, blobs):
     if tree_response.status_code != 201:
         print("Error creating the tree:", tree_response.text)
         exit()
-    else:
-        print("Tree ok")
 
     new_tree_sha = tree_response.json()["sha"]
-
-    print("Tree creation response:", tree_response.text)
 
     return new_tree_sha
 
@@ -105,8 +98,6 @@ def create_new_commit(api_url, token, last_commit_sha, new_tree_sha):
     if commit_response.status_code != 201:
         print("Error creating the commit:", commit_response.text)
         exit()
-    else:
-        print("Commit ok")
 
     new_commit_sha = commit_response.json()["sha"]
 
@@ -124,7 +115,7 @@ def update_branch(api_url, token, branch, new_commit_sha):
         print("Error updating the branch reference:", update_ref_response.text)
         exit()
     else:
-        print("Images updated")
+        print("Images Uploaded")
 
 
 def upload_multiple_files_to_github(file_names, base64_imgs):
@@ -138,24 +129,15 @@ def upload_multiple_files_to_github(file_names, base64_imgs):
     base_tree_sha = get_last_commit_tree(api_url, token, last_commit_sha)
     blobs = create_imgs_blobs(api_url, token, file_names, base64_imgs)
     new_tree_sha = create_new_tree(api_url, token, base_tree_sha, blobs)
-
-    print("")
-    print("Creating commit with:")
-    print("Parent SHA:", last_commit_sha)
-    print("Tree SHA:", new_tree_sha)
-    print("")
-
     new_commit_sha = create_new_commit(api_url, token, last_commit_sha, new_tree_sha)
     update_branch(api_url, token, branch, new_commit_sha)
-
-    print("Updating branch with commit SHA:", new_commit_sha)
 
 
 def upload_file_to_github(file, file_name):
 
     # Config
     owner, token, repo, branch = get_repo_config()
-    remote_file_name = f"openai-vfinetune/{file_name}"
+    remote_file_name = f"{FOLDER}/{file_name}"
 
     # Read file content and encode it in Base64
     file_content = base64.b64encode(file.read().encode()).decode()
@@ -239,7 +221,8 @@ def get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator):
         sample, sample_img = format_sample(image, image_name, d_gt, owner, repo, branch)
         dataset_jsonl.append(sample)
         dataset_imgs.append(sample_img)
-        dataset_imgs_names.append(image_name)
+        image_path = f"{FOLDER}/{SUBFOLDER}/{image_name}"
+        dataset_imgs_names.append(image_path)
 
         if i + 1 >= TRAINING_SAMPLES:
             break
