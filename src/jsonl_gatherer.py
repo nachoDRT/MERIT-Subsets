@@ -6,6 +6,130 @@ import argparse
 TRAINING_SAMPLES = 1
 
 
+def get_repo_config():
+
+    secrets_path = join(dirname(dirname(abspath(__file__))), "config", "secrets.json")
+    secrets = load_secrets(secrets_path)
+
+    owner = secrets["owner"]
+    repo = secrets["repo"]
+    token = secrets["token"]
+    branch = "main"
+
+    return owner, token, repo, branch
+
+
+def compose_url(owner: str, repo: str, branch: str, image_name: str):
+
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{image_name}"
+
+
+def get_last_commit_sha(api_url, token, branch):
+
+    response = requests.get(f"{api_url}/git/ref/heads/{branch}", headers={"Authorization": f"Bearer {token}"})
+    if response.status_code != 200:
+        print("Error fetching the branch reference:", response.json())
+        exit()
+
+    last_commit_sha = response.json()["object"]["sha"]
+
+    return last_commit_sha
+
+
+def get_last_commit_tree(api_url, token, last_commit_sha):
+
+    response = requests.get(f"{api_url}/git/commits/{last_commit_sha}", headers={"Authorization": f"Bearer {token}"})
+    if response.status_code != 200:
+        print("Error fetching the latest commit:", response.json())
+        exit()
+
+    base_tree_sha = response.json()["tree"]["sha"]
+
+    return base_tree_sha
+
+
+def create_imgs_blobs(api_url, token, file_names, base64_imgs):
+
+    blobs = []
+
+    for base64_img, file_name in zip(base64_imgs, file_names):
+
+        blob_response = requests.post(
+            f"{api_url}/git/blobs",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"content": base64_img, "encoding": "base64"},
+        )
+
+        if blob_response.status_code != 201:
+            print(f"Error creating blob for {file_name}:", blob_response.json())
+            exit()
+
+        blob_sha = blob_response.json()["sha"]
+        blobs.append({"path": file_name, "mode": "100644", "type": "blob", "sha": blob_sha})
+
+    return blobs
+
+
+def create_new_tree(api_url, token, base_tree_sha, blobs):
+
+    tree_response = requests.post(
+        f"{api_url}/git/trees",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={"base_tree": base_tree_sha, "tree": blobs},
+    )
+    if tree_response.status_code != 201:
+        print("Error creating the tree:", tree_response.json())
+        exit()
+
+    new_tree_sha = tree_response.json()["sha"]
+
+    return new_tree_sha
+
+
+def create_new_commit(api_url, token, last_commit_sha, new_tree_sha):
+
+    commit_message = "Uploading multiple images in a single commit"
+    commit_response = requests.post(
+        f"{api_url}/git/commits",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={"message": commit_message, "tree": new_tree_sha, "parents": [last_commit_sha]},
+    )
+    if commit_response.status_code != 201:
+        print("Error creating the commit:", commit_response.json())
+        exit()
+
+    new_commit_sha = commit_response.json()["sha"]
+
+    return new_commit_sha
+
+
+def update_branch(api_url, token, branch, new_commit_sha):
+
+    update_ref_response = requests.patch(
+        f"{api_url}/git/refs/heads/{branch}",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={"sha": new_commit_sha},
+    )
+    if update_ref_response.status_code != 200:
+        print("Error updating the branch reference:", update_ref_response.json())
+        exit()
+
+
+def upload_multiple_files_to_github(file_names, base64_imgs):
+
+    owner, token, repo, branch = get_repo_config()
+
+    # Base URL for the GitHub API
+    api_url = f"https://api.github.com/repos/{owner}/{repo}"
+
+    last_commit_sha = get_last_commit_sha(api_url, token, branch)
+    base_tree_sha = get_last_commit_tree(api_url, token, last_commit_sha)
+    blobs = create_imgs_blobs(api_url, token, file_names, base64_imgs)
+    new_tree_sha = create_new_tree(api_url, token, base_tree_sha, blobs)
+    new_commit_sha = create_new_commit(api_url, token, last_commit_sha, new_tree_sha)
+    update_branch(api_url, token, branch, new_commit_sha)
+
+
 def upload_image_to_github(base64_image, image_name, upload_img: bool = False):
 
     secrets_path = join(dirname(dirname(abspath(__file__))), "config", "secrets.json")
@@ -21,7 +145,7 @@ def upload_image_to_github(base64_image, image_name, upload_img: bool = False):
     api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{remote_file_name}/{image_name}"
 
     if upload_img:
-        payload = {"message": "Uploading test image", "content": base64_image, "branch": branch}
+        payload = {"message": "Test: What If Image Already Exist", "content": base64_image, "branch": branch}
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         response = requests.put(api_url, json=payload, headers=headers)
 
@@ -35,9 +159,32 @@ def upload_image_to_github(base64_image, image_name, upload_img: bool = False):
     return api_url
 
 
-def format_sample(image, image_name, gt, args: dict):
+def upload_file_to_github(file, file_name):
+
+    # Config
+    owner, token, repo, branch = get_repo_config()
+    remote_file_name = "openai-vfinetune/data"
+
+    file_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{remote_file_name}/{file_name}"
+
+    payload = {"message": "Upload File", "content": file, "branch": branch}
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    response = requests.put(file_url, json=payload, headers=headers)
+
+    if response.status_code == 201:
+        print("Image successfully uploaded")
+        print("Public URL:", response.json()["content"]["download_url"])
+    else:
+        print("Error uploading image:", response.status_code)
+        print("Details:", response.json())
+
+    return file_url
+
+
+def format_sample(image, image_name: str, gt, owner: str, repo: str, branch: str):
+
     base64_image = encode_image(image)
-    url = upload_image_to_github(base64_image, image_name, args["save_imgs"])
+    url = compose_url(owner, repo, branch, image_name)
 
     sample = {
         "messages": [
@@ -75,42 +222,43 @@ def format_sample(image, image_name, gt, args: dict):
         ]
     }
 
-    return sample
+    return sample, base64_image
 
 
-def get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator, args: dict):
+def get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator):
 
     dataset_jsonl = []
+    dataset_imgs = []
+    dataset_imgs_names = []
+
+    owner, _, repo, branch = get_repo_config()
 
     for i, (decoded_sample, non_decoded_sample) in enumerate(zip(decoded_ds_iterator, non_decoded_ds_iterator)):
         image, d_gt = get_sample_data(decoded_sample)
         image_name = get_sample_img_name(non_decoded_sample)
-        sample = format_sample(image, image_name, d_gt, args)
+        sample, sample_img = format_sample(image, image_name, d_gt, owner, repo, branch)
         dataset_jsonl.append(sample)
+        dataset_imgs.append(sample_img)
+        dataset_imgs_names.append(image_name)
 
         if i + 1 >= TRAINING_SAMPLES:
             break
 
-    return dataset_jsonl
+    return dataset_jsonl, dataset_imgs, dataset_imgs_names
 
 
-def main(args: dict):
+def main():
 
     decoded_ds_iterator = get_dataset_iterator()
     non_decoded_ds_iterator = get_dataset_iterator(True)
-    dataset_jsonl = get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator, args)
+
+    dataset_jsonl, base64_imgs, base64_imgs_names = get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator)
+
     save_dataset_jsonl("openai_finetuning_dataset.jsonl", dataset_jsonl)
+    upload_file_to_github(dataset_jsonl, "openai_finetuning_dataset.jsonl")
+    upload_multiple_files_to_github(base64_imgs_names, base64_imgs)
 
 
 if __name__ == "__main__":
 
-    # Parse arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--save_imgs", required=True, type=str)
-    args = parser.parse_args()
-
-    save_imgs = args.save_imgs.lower() in ("true", "1", "yes", "y")
-    args = {}
-    args["save_imgs"] = save_imgs
-
-    main(args)
+    main()
