@@ -254,7 +254,7 @@ def main():
 
     dataset_jsonl, base64_imgs, base64_imgs_names = get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator)
 
-    ds_jsonl_file = save_dataset_jsonl("openai_finetuning_dataset.jsonl", dataset_jsonl)
+    # ds_jsonl_file = save_dataset_jsonl("openai_finetuning_dataset.jsonl", dataset_jsonl)
     # upload_file_to_github(ds_jsonl_file, "openai_finetuning_dataset.jsonl")
     upload_multiple_files_to_github(base64_imgs_names, base64_imgs)
 
