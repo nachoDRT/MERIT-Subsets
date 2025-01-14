@@ -31,6 +31,9 @@ def save_dataset_jsonl(file_name, dataset_jsonl):
         for item in dataset_jsonl:
             f.write(json.dumps(item) + "\n")
 
+    # Return the file as an object
+    return open(path, "r")
+
 
 def load_secrets(file_path: str) -> Dict:
 

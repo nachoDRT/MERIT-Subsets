@@ -1,6 +1,5 @@
 from utils import *
 import requests
-import argparse
 
 
 TRAINING_SAMPLES = 1
@@ -28,7 +27,7 @@ def get_last_commit_sha(api_url, token, branch):
 
     response = requests.get(f"{api_url}/git/ref/heads/{branch}", headers={"Authorization": f"Bearer {token}"})
     if response.status_code != 200:
-        print("Error fetching the branch reference:", response.json())
+        print("Error fetching the branch reference:", response.text)
         exit()
 
     last_commit_sha = response.json()["object"]["sha"]
@@ -40,7 +39,7 @@ def get_last_commit_tree(api_url, token, last_commit_sha):
 
     response = requests.get(f"{api_url}/git/commits/{last_commit_sha}", headers={"Authorization": f"Bearer {token}"})
     if response.status_code != 200:
-        print("Error fetching the latest commit:", response.json())
+        print("Error fetching the latest commit:", response.text)
         exit()
 
     base_tree_sha = response.json()["tree"]["sha"]
@@ -61,11 +60,16 @@ def create_imgs_blobs(api_url, token, file_names, base64_imgs):
         )
 
         if blob_response.status_code != 201:
-            print(f"Error creating blob for {file_name}:", blob_response.json())
+            print(f"Error creating blob for {file_name}:", blob_response.text)
             exit()
+
+        else:
+            print("Blob ok")
 
         blob_sha = blob_response.json()["sha"]
         blobs.append({"path": file_name, "mode": "100644", "type": "blob", "sha": blob_sha})
+
+        print(f"Blob response for {file_name}: {blob_response.text}")
 
     return blobs
 
@@ -78,10 +82,14 @@ def create_new_tree(api_url, token, base_tree_sha, blobs):
         json={"base_tree": base_tree_sha, "tree": blobs},
     )
     if tree_response.status_code != 201:
-        print("Error creating the tree:", tree_response.json())
+        print("Error creating the tree:", tree_response.text)
         exit()
+    else:
+        print("Tree ok")
 
     new_tree_sha = tree_response.json()["sha"]
+
+    print("Tree creation response:", tree_response.text)
 
     return new_tree_sha
 
@@ -95,8 +103,10 @@ def create_new_commit(api_url, token, last_commit_sha, new_tree_sha):
         json={"message": commit_message, "tree": new_tree_sha, "parents": [last_commit_sha]},
     )
     if commit_response.status_code != 201:
-        print("Error creating the commit:", commit_response.json())
+        print("Error creating the commit:", commit_response.text)
         exit()
+    else:
+        print("Commit ok")
 
     new_commit_sha = commit_response.json()["sha"]
 
@@ -111,8 +121,10 @@ def update_branch(api_url, token, branch, new_commit_sha):
         json={"sha": new_commit_sha},
     )
     if update_ref_response.status_code != 200:
-        print("Error updating the branch reference:", update_ref_response.json())
+        print("Error updating the branch reference:", update_ref_response.text)
         exit()
+    else:
+        print("Images updated")
 
 
 def upload_multiple_files_to_github(file_names, base64_imgs):
@@ -126,59 +138,47 @@ def upload_multiple_files_to_github(file_names, base64_imgs):
     base_tree_sha = get_last_commit_tree(api_url, token, last_commit_sha)
     blobs = create_imgs_blobs(api_url, token, file_names, base64_imgs)
     new_tree_sha = create_new_tree(api_url, token, base_tree_sha, blobs)
+
+    print("")
+    print("Creating commit with:")
+    print("Parent SHA:", last_commit_sha)
+    print("Tree SHA:", new_tree_sha)
+    print("")
+
     new_commit_sha = create_new_commit(api_url, token, last_commit_sha, new_tree_sha)
     update_branch(api_url, token, branch, new_commit_sha)
 
-
-def upload_image_to_github(base64_image, image_name, upload_img: bool = False):
-
-    secrets_path = join(dirname(dirname(abspath(__file__))), "config", "secrets.json")
-    secrets = load_secrets(secrets_path)
-
-    # Config
-    owner = secrets["owner"]
-    repo = secrets["repo"]
-    token = secrets["token"]
-    branch = "main"
-    remote_file_name = "openai-vfinetune/data"
-
-    api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{remote_file_name}/{image_name}"
-
-    if upload_img:
-        payload = {"message": "Test: What If Image Already Exist", "content": base64_image, "branch": branch}
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        response = requests.put(api_url, json=payload, headers=headers)
-
-        if response.status_code == 201:
-            print("Image successfully uploaded")
-            print("Public URL:", response.json()["content"]["download_url"])
-        else:
-            print("Error uploading image:", response.status_code)
-            print("Details:", response.json())
-
-    return api_url
+    print("Updating branch with commit SHA:", new_commit_sha)
 
 
 def upload_file_to_github(file, file_name):
 
     # Config
     owner, token, repo, branch = get_repo_config()
-    remote_file_name = "openai-vfinetune/data"
+    remote_file_name = f"openai-vfinetune/{file_name}"
 
-    file_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{remote_file_name}/{file_name}"
+    # Read file content and encode it in Base64
+    file_content = base64.b64encode(file.read().encode()).decode()
 
-    payload = {"message": "Upload File", "content": file, "branch": branch}
+    # GitHub API URL for the file
+    file_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{remote_file_name}"
+
+    # Prepare the payload
+    payload = {"message": f"Upload {file_name}", "content": file_content, "branch": branch}
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    # Send the request to GitHub
     response = requests.put(file_url, json=payload, headers=headers)
 
+    # Handle response
     if response.status_code == 201:
-        print("Image successfully uploaded")
+        print("File successfully uploaded")
         print("Public URL:", response.json()["content"]["download_url"])
+        return response.json()["content"]["download_url"]
     else:
-        print("Error uploading image:", response.status_code)
+        print("Error uploading file:", response.status_code)
         print("Details:", response.json())
-
-    return file_url
+        return None
 
 
 def format_sample(image, image_name: str, gt, owner: str, repo: str, branch: str):
@@ -254,8 +254,8 @@ def main():
 
     dataset_jsonl, base64_imgs, base64_imgs_names = get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator)
 
-    save_dataset_jsonl("openai_finetuning_dataset.jsonl", dataset_jsonl)
-    upload_file_to_github(dataset_jsonl, "openai_finetuning_dataset.jsonl")
+    ds_jsonl_file = save_dataset_jsonl("openai_finetuning_dataset.jsonl", dataset_jsonl)
+    # upload_file_to_github(ds_jsonl_file, "openai_finetuning_dataset.jsonl")
     upload_multiple_files_to_github(base64_imgs_names, base64_imgs)
 
 
