@@ -22,7 +22,7 @@ def get_repo_config():
 
 def compose_url(owner: str, repo: str, branch: str, image_name: str):
 
-    return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{image_name}"
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{FOLDER}/{SUBFOLDER}/{image_name}"
 
 
 def get_last_commit_sha(api_url, token, branch):
