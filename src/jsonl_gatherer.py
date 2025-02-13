@@ -268,8 +268,8 @@ def main():
 
     set_folder(subset_name)
 
-    decoded_ds_iterator = get_dataset_iterator(subset_name)
-    non_decoded_ds_iterator = get_dataset_iterator(subset_name, True)
+    decoded_ds_iterator = get_dataset_iterator(subset_name, language)
+    non_decoded_ds_iterator = get_dataset_iterator(subset_name, language, True)
 
     dataset_jsonl, base64_imgs, base64_imgs_names = get_dataset_jsonl(
         decoded_ds_iterator, non_decoded_ds_iterator, language

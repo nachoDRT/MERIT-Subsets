@@ -7,9 +7,15 @@ from io import BytesIO
 import base64
 
 
-def get_dataset_iterator(subset_name: str, decode=None):
+def get_dataset_iterator(subset_name: str, language: str, decode=None):
 
     print("Loading Dataset")
+
+    # We donnot know why, but for degradations the path field is None, so we implement this workaround
+    if "degradation" in subset_name and language == "spanish":
+        subset_name = "es-digital-seq"
+    elif "degradation" in subset_name and language == "spanish":
+        subset_name = "en-digital-seq"
 
     dataset = load_dataset("de-Rodrigo/merit", subset_name, split="test", streaming=True)
 
