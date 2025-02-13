@@ -1,10 +1,18 @@
 from utils import *
 import requests
+import argparse
 
 
-TRAINING_SAMPLES = 10
+TRAINING_SAMPLES = 150
+FOLDER_BASE = "openai-vfinetune"
 FOLDER = "openai-vfinetune"
 SUBFOLDER = "data"
+
+
+def set_folder(subset: str):
+
+    global FOLDER
+    FOLDER = f"{FOLDER_BASE}-{subset}"
 
 
 def get_repo_config():
@@ -163,32 +171,50 @@ def upload_file_to_github(file, file_name):
         return None
 
 
-def format_sample(image, image_name: str, gt, owner: str, repo: str, branch: str):
+def format_sample(image, image_name: str, gt, owner: str, repo: str, branch: str, lang: str):
 
     base64_image = encode_image(image)
     url = compose_url(owner, repo, branch, image_name)
+    
+    if lang == "english":
+        years = "'year_9', 'year_10', 'year_11', or 'year_12'"
+        levels = "(9, 10, 11, or 12)"
+        example_year = "year_9"
+        rest_of_the_years = "year_10, year_11, or year_12"
+    
+    elif lang == "spanish":
+        years = "'3_de_la_eso', '4_de_la_eso', '1_de_bachillerato', or '2_de_bachillerato'"
+        levels = "(3º, 4º, 1º, or 2º)"
+        example_year = "3_de_la_eso"
+        rest_of_the_years = "4_de_la_eso, 1_de_bachillerato, or 2_de_bachillerato"
+    
+    else:
+        years = [""]
+        levels = ""
+        example_year = ""
+        rest_of_the_years = ""
 
     sample = {
         "messages": [
             {
                 "role": "system",
-                "content": "You are an assistant that extracts grades from strudents' transcripts of records.",
+                "content": "You are an assistant that extracts grades from students' transcripts of records.",
             },
             {
                 "role": "user",
                 "content": (
                     "Look at the image and extract:\n"
                     "- The subjects and their grades.\n"
-                    "- The level (9, 10, 11, or 12) they correspond to.\n\n"
+                    f"- The level {levels} they correspond to.\n\n"
                     "You must return a SINGLE JSON object in the exact following format:\n\n"
                     "{\n"
-                    '  "year_9": [  # Or year_10, year_11, or year_12 as appropriate\n'
+                    f'  {example_year}: [  # Or {rest_of_the_years} as appropriate\n'
                     '    {"subject": "...", "grade": "..."},\n'
                     '    {"subject": "...", "grade": "..."}\n'
                     "  ]\n"
                     "}\n\n"
                     "DO NOT include any additional text, explanations, or comments. "
-                    "Use the key 'year_9', 'year_10', 'year_11', or 'year_12' based on what can be inferred from the image."
+                    f"Use the key {years} based on what can be inferred from the image."
                 ),
             },
             {
@@ -200,14 +226,14 @@ def format_sample(image, image_name: str, gt, owner: str, repo: str, branch: str
                     }
                 ],
             },
-            {"role": "assistant", "content": json.dumps(gt)},
+            {"role": "assistant", "content": gt},
         ]
     }
 
     return sample, base64_image
 
 
-def get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator):
+def get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator, lang: str):
 
     dataset_jsonl = []
     dataset_imgs = []
@@ -218,7 +244,7 @@ def get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator):
     for i, (decoded_sample, non_decoded_sample) in enumerate(zip(decoded_ds_iterator, non_decoded_ds_iterator)):
         image, d_gt = get_sample_data(decoded_sample)
         image_name = get_sample_img_name(non_decoded_sample)
-        sample, sample_img = format_sample(image, image_name, d_gt, owner, repo, branch)
+        sample, sample_img = format_sample(image, image_name, d_gt, owner, repo, branch, lang)
         dataset_jsonl.append(sample)
         dataset_imgs.append(sample_img)
         image_path = f"{FOLDER}/{SUBFOLDER}/{image_name}"
@@ -232,10 +258,20 @@ def get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator):
 
 def main():
 
-    decoded_ds_iterator = get_dataset_iterator()
-    non_decoded_ds_iterator = get_dataset_iterator(True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--subset", type=str, required=True)
+    parser.add_argument("--language", type=str, required=True)
+    args = parser.parse_args()
 
-    dataset_jsonl, base64_imgs, base64_imgs_names = get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator)
+    subset_name = args.subset
+    language = args.language
+    
+    set_folder(subset_name)
+
+    decoded_ds_iterator = get_dataset_iterator(subset_name)
+    non_decoded_ds_iterator = get_dataset_iterator(subset_name, True)
+
+    dataset_jsonl, base64_imgs, base64_imgs_names = get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator, language)
 
     ds_jsonl_file = save_dataset_jsonl("openai_finetuning_dataset.jsonl", dataset_jsonl)
     upload_file_to_github(ds_jsonl_file, "openai_finetuning_dataset.jsonl")
