@@ -175,19 +175,19 @@ def format_sample(image, image_name: str, gt, owner: str, repo: str, branch: str
 
     base64_image = encode_image(image)
     url = compose_url(owner, repo, branch, image_name)
-    
+
     if lang == "english":
         years = "'year_9', 'year_10', 'year_11', or 'year_12'"
         levels = "(9, 10, 11, or 12)"
         example_year = "year_9"
         rest_of_the_years = "year_10, year_11, or year_12"
-    
+
     elif lang == "spanish":
         years = "'3_de_la_eso', '4_de_la_eso', '1_de_bachillerato', or '2_de_bachillerato'"
         levels = "(3º, 4º, 1º, or 2º)"
         example_year = "3_de_la_eso"
         rest_of_the_years = "4_de_la_eso, 1_de_bachillerato, or 2_de_bachillerato"
-    
+
     else:
         years = [""]
         levels = ""
@@ -208,7 +208,7 @@ def format_sample(image, image_name: str, gt, owner: str, repo: str, branch: str
                     f"- The level {levels} they correspond to.\n\n"
                     "You must return a SINGLE JSON object in the exact following format:\n\n"
                     "{\n"
-                    f'  {example_year}: [  # Or {rest_of_the_years} as appropriate\n'
+                    f"  {example_year}: [  # Or {rest_of_the_years} as appropriate\n"
                     '    {"subject": "...", "grade": "..."},\n'
                     '    {"subject": "...", "grade": "..."}\n'
                     "  ]\n"
@@ -265,16 +265,18 @@ def main():
 
     subset_name = args.subset
     language = args.language
-    
+
     set_folder(subset_name)
 
     decoded_ds_iterator = get_dataset_iterator(subset_name)
     non_decoded_ds_iterator = get_dataset_iterator(subset_name, True)
 
-    dataset_jsonl, base64_imgs, base64_imgs_names = get_dataset_jsonl(decoded_ds_iterator, non_decoded_ds_iterator, language)
+    dataset_jsonl, base64_imgs, base64_imgs_names = get_dataset_jsonl(
+        decoded_ds_iterator, non_decoded_ds_iterator, language
+    )
 
-    ds_jsonl_file = save_dataset_jsonl("openai_finetuning_dataset.jsonl", dataset_jsonl)
-    upload_file_to_github(ds_jsonl_file, "openai_finetuning_dataset.jsonl")
+    ds_jsonl_file = save_dataset_jsonl(f"openai-finetuning-{subset_name}.jsonl", dataset_jsonl)
+    upload_file_to_github(ds_jsonl_file, f"openai-finetuning-dataset-{subset_name}.jsonl")
     upload_multiple_files_to_github(base64_imgs_names, base64_imgs)
 
 
