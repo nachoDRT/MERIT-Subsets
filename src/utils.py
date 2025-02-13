@@ -7,11 +7,11 @@ from io import BytesIO
 import base64
 
 
-def get_dataset_iterator(decode=None):
+def get_dataset_iterator(subset_name: str, decode=None):
 
     print("Loading Dataset")
 
-    dataset = load_dataset("de-Rodrigo/merit", "en-digital-seq", split="test", streaming=True)
+    dataset = load_dataset("de-Rodrigo/merit", subset_name, split="test", streaming=True)
 
     if decode:
         dataset = dataset.cast_column("image", Image(decode=False))

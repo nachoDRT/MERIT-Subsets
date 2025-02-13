@@ -226,7 +226,7 @@ def format_sample(image, image_name: str, gt, owner: str, repo: str, branch: str
                     }
                 ],
             },
-            {"role": "assistant", "content": gt},
+            {"role": "assistant", "content": str(gt)},
         ]
     }
 
